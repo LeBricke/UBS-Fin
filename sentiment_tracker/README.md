@@ -1,33 +1,29 @@
-# Cross-Brand Reddit Sentiment Tracker
+# Management Commentary Sentiment Scorer
 
 Evidence tool for one slide in TAG Capital's UBS Finance Challenge pitch:
-**long Pop Mart (9992.HK), short Funko (FNKO US).**
+**long Pop Mart (9992.HK), short Funko (FNKO).**
 
-It answers a single research question:
+Given pre-collected earnings filings (Pop Mart, 6 HKEX results announcements)
+and earnings-call transcripts (Funko, 6 quarterly calls), it scores every
+substantive paragraph with Claude Haiku 4.5 across five thesis-relevant
+topics, aggregates into half-year buckets, and renders two small-multiples
+charts plus a methodology note ready to drop into a deck and appendix.
 
-> Across the past ~18 months, how has Reddit-based collector sentiment
-> evolved for Labubu / Pop Mart versus Funko Pop in Western collector
-> communities, and when did the divergence become visible?
+## What this tool does
 
-Output is a deck-ready PNG chart, an interactive HTML version, the
-underlying weekly CSV, and an auto-generated `methodology.md`.
+1. Reads documents in `data/transcripts/`.
+2. Splits each into paragraphs and calls Claude Haiku 4.5 on each one with a
+   fixed rubric (topic + confidence + direction, each an integer in [-2, +2]).
+3. Aggregates to per-period and per-half-year rollups.
+4. Draws a 2×3 small-multiples chart (one panel per topic) and a methodology
+   markdown file.
+
+Total runtime on 12 documents: under 10 minutes. Total Anthropic cost:
+under $2 at current Haiku 4.5 pricing.
 
 ## Setup
 
-The tool is Reddit-only by design (TikTok and X were ruled out on
-access/cost grounds — see `output/methodology.md` after a run).
-
 ### 1. Install dependencies
-
-With `uv` (preferred):
-
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-```
-
-Or plain `pip`:
 
 ```bash
 python3.11 -m venv .venv
@@ -35,86 +31,67 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Get a Reddit API credential
-
-1. Sign in at <https://www.reddit.com/prefs/apps>.
-2. Click **"are you a developer? create an app..."** at the bottom.
-3. Pick type **"script"**. Name it anything (e.g. `tag-capital-sentiment`).
-   Redirect URI: `http://localhost:8080` (unused for script apps).
-4. The app page shows a 14-character **client ID** under the app name
-   and a **client secret**. Copy both.
-5. Your **user agent** should be something identifiable, e.g.
-   `tag-capital-sentiment/0.1 by u/your_reddit_username`.
-
-### 3. Get an Anthropic API key
-
-Go to <https://console.anthropic.com/settings/keys> and generate a key.
-
-### 4. Configure `.env`
+### 2. Set your Anthropic API key
 
 ```bash
 cp .env.example .env
-# then edit .env and fill in all four values
+# then edit .env and paste your key
 ```
 
-## Running
+Key lives at <https://console.anthropic.com/settings/keys>.
 
-Full pipeline:
+### 3. Drop documents into `data/transcripts/`
+
+Filenames must match `<company>_<YYYY><H1|H2|Q1-Q4>.<ext>`. Anything that
+doesn't match is logged and skipped.
+
+Expected files:
+
+| File | Company | Period | Type |
+|---|---|---|---|
+| `popmart_2023H1.pdf` | Pop Mart | H1 2023 | HKEX interim results |
+| `popmart_2023H2.pdf` | Pop Mart | H2 2023 | HKEX annual results |
+| `popmart_2024H1.pdf` | Pop Mart | H1 2024 | HKEX interim results |
+| `popmart_2024H2.pdf` | Pop Mart | H2 2024 | HKEX annual results |
+| `popmart_2025H1.pdf` | Pop Mart | H1 2025 | HKEX interim results |
+| `popmart_2025H2.pdf` | Pop Mart | H2 2025 | HKEX annual results |
+| `funko_2024Q3.txt` | Funko | Q3 2024 | earnings call transcript |
+| `funko_2024Q4.txt` | Funko | Q4 2024 | earnings call transcript |
+| `funko_2025Q1.txt` | Funko | Q1 2025 | earnings call transcript |
+| `funko_2025Q2.txt` | Funko | Q2 2025 | earnings call transcript |
+| `funko_2025Q3.txt` | Funko | Q3 2025 | earnings call transcript |
+| `funko_2025Q4.txt` | Funko | Q4 2025 | earnings call transcript |
+
+Documents are not tracked in git.
+
+## Running
 
 ```bash
 python run_all.py
 ```
 
-This runs four phases in order:
-
-1. **Scrape** — pull posts from Reddit into `data/sentiment.db`.
-2. **Score** — classify un-scored posts via Claude Haiku 4.5.
-3. **Analyze** — weekly rollups with engagement weighting.
-4. **Visualize** — write PNG, HTML, CSV, and `methodology.md` into `output/`.
-
-The SQLite DB caches both scraped content and sentiment scores, so a
-second run finishes in under a minute (nothing new to scrape or score).
-
-You can also run any phase on its own — useful while tweaking the chart:
+Each stage is also runnable on its own while iterating:
 
 ```bash
-python scrape_reddit.py
-python score_sentiment.py
-python analyze.py
-python visualize.py
+python read_documents.py     # data/transcripts/ -> data/statements.csv
+python score_statements.py   # data/statements.csv -> data/scored.csv (Anthropic API)
+python aggregate.py          # data/scored.csv -> output/scored_by_*.csv
+python visualize.py          # the CSVs -> PNGs + methodology.md
 ```
 
-## Refreshing on April 28
+## Outputs
 
-Before the final run for the submission:
+All files below are regenerated on each run and are gitignored.
 
-```bash
-# 1. Pull the latest posts from the time window
-python scrape_reddit.py
+| Path | What it is |
+|---|---|
+| `data/statements.csv` | Every extracted paragraph, one row each |
+| `data/scored.csv` | Same rows plus Claude's topic / confidence / direction / rationale |
+| `output/scored_by_period.csv` | Means by (company, period, topic) |
+| `output/scored_by_half.csv` | Means by (company, half-year, topic) — charted |
+| `output/sentiment_chart.png` | Confidence small-multiples chart, 300 DPI |
+| `output/direction_chart.png` | Direction small-multiples chart, 300 DPI |
+| `output/methodology.md` | Appendix-ready methodology with prompt, counts, limitations |
 
-# 2. Score only the new ones (existing scores are cached)
-python score_sentiment.py
-
-# 3. Re-aggregate and re-render
-python analyze.py
-python visualize.py
-```
-
-Then drop `output/sentiment_chart.png` into the deck and paste the
-relevant paragraphs from `output/methodology.md` into the appendix.
-
-## What's in `output/`
-
-- `sentiment_chart.png` — deck-ready 300 DPI PNG, TAG Capital palette.
-- `sentiment_chart.html` — interactive Plotly version for exploration.
-- `weekly_aggregates.csv` — the underlying weekly data.
-- `methodology.md` — date range, subreddits, search terms, post counts,
-  classifier version, statistical test, and honest limitations.
-
-## What this tool is not
-
-- Not a dashboard, not a scheduled service, not a web app.
-- Not multi-language — English Reddit only.
-- Not a behavior signal — it measures **opinion**, not purchases.
-
-See `output/methodology.md` after a run for the full limitations list.
+Paste `sentiment_chart.png` into the deck. Paste the relevant sections of
+`methodology.md` into the appendix.
