@@ -3,32 +3,23 @@
 .env.*
 !.env.example
 
-# SQLite cache
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
+# Source documents (large binaries, likely copyrighted)
+data/transcripts/*.pdf
+data/transcripts/*.txt
+!data/transcripts/.gitkeep
 
-# Generated output artifacts (the DB is the cache; these are derived)
-output/*.png
-output/*.html
+# Intermediate and final outputs (regenerated from the documents)
+data/statements.csv
+data/scored.csv
 output/*.csv
-output/methodology.md
+output/*.png
+output/*.md
 
 # Python
 __pycache__/
 *.pyc
-*.pyo
-.pytest_cache/
-.ipynb_checkpoints/
-*.egg-info/
-build/
-dist/
-
-# Virtual envs
 .venv/
 venv/
-env/
 
 # Editors / OS
 .DS_Store
